@@ -57,75 +57,28 @@ Load in the testing dataset from the link into testingData variable
 testingData <- read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"), na.strings=c("NA","#DIV/0!",""))
 ```
 
+
+##Data Cleaning
+```{r}
+trainingData <- trainingData[, 6:dim(trainingData)[2]]
+threshold <- dim(trainingData)[1] * 0.95
+```
+
+Remove columns with more than 95% of NA or "" values
+```{r}
+goodColumns <- !apply(trainingData, 2, function(x) sum(is.na(x)) > threshold  || sum(x=="") > threshold)
+trainingData <- trainingData[, goodColumns]
+badColumns <- nearZeroVar(trainingData, saveMetrics = TRUE)
+trainingData <- trainingData[, badColumns$nzv==FALSE]
+trainingData$classe = factor(trainingData$classe)
+```
+
+##Data Partitioning
 Partioning Training data set into two data sets, 70% for dataTraining, 30% for dataValidating:
 ```{r}
 inTraining <- createDataPartition(y=trainingData$classe, p=0.70, list=FALSE)
 dataTraining <- trainingData[inTraining, ]; dataValidating <- trainingData[-inTraining, ]
 dim(dataTraining); dim(dataValidating)
-```
-
-##Data Cleaning
-Transformation 1: Cleaning NearZeroVariance Variables Run to view possible NZV Variables:
-```{r}
-dataNZV <- nearZeroVar(dataTraining, saveMetrics=TRUE)
-```
-
-Creating another subset without NZV variables:
-```{r}
-dataNZVvars <- names(dataTraining) %in% c("new_window", "kurtosis_roll_belt", "kurtosis_picth_belt", "kurtosis_yaw_belt", "skewness_roll_belt", "skewness_roll_belt.1", "skewness_yaw_belt", "max_yaw_belt", "min_yaw_belt", "amplitude_yaw_belt", "avg_roll_arm", "stddev_roll_arm", "var_roll_arm", "avg_pitch_arm", "stddev_pitch_arm", "var_pitch_arm", "avg_yaw_arm", "stddev_yaw_arm", "var_yaw_arm", "kurtosis_roll_arm", "kurtosis_picth_arm", "kurtosis_yaw_arm", "skewness_roll_arm", "skewness_pitch_arm", "skewness_yaw_arm", "max_roll_arm", "min_roll_arm", "min_pitch_arm", "amplitude_roll_arm", "amplitude_pitch_arm", "kurtosis_roll_dumbbell", "kurtosis_picth_dumbbell", "kurtosis_yaw_dumbbell", "skewness_roll_dumbbell", "skewness_pitch_dumbbell", "skewness_yaw_dumbbell", "max_yaw_dumbbell", "min_yaw_dumbbell", "amplitude_yaw_dumbbell", "kurtosis_roll_forearm", "kurtosis_picth_forearm", "kurtosis_yaw_forearm", "skewness_roll_forearm", "skewness_pitch_forearm", "skewness_yaw_forearm", "max_roll_forearm", "max_yaw_forearm", "min_roll_forearm", "min_yaw_forearm", "amplitude_roll_forearm", "amplitude_yaw_forearm", "avg_roll_forearm", "stddev_roll_forearm", "var_roll_forearm", "avg_pitch_forearm", "stddev_pitch_forearm", "var_pitch_forearm", "avg_yaw_forearm", "stddev_yaw_forearm", "var_yaw_forearm")
-dataTraining <- dataTraining[!dataNZVvars]
-dim(dataTraining)
-```
-
-Transformation 2: Killing first column of Dataset - ID Removing first ID variable so that it does not interfer with ML Algorithms:
-```{r}
-dataTraining <- dataTraining[c(-1)]
-```
-
-Transformation 3: Cleaning Variables with too many NAs. For Variables that have more than a 70% threshold of NA’s I’m going to leave them out:
-```{r}
-trainingSubs <- dataTraining #creating another subset to iterate in loop
-for(i in 1:length(dataTraining)) { #for every column in the training dataset
-  if( sum( is.na( dataTraining[, i] ) ) /nrow(dataTraining) >= .7 ) { #if n?? NAs > 60% of total observations
-    for(j in 1:length(trainingSubs)) {
-      if( length( grep(names(dataTraining[i]), names(trainingSubs)[j]) ) ==1)  { #if the columns are the same:
-        trainingSubs <- trainingSubs[ , -j] #Remove that column
-      }   
-    } 
-  }
-}
-
-dim(trainingSubs)
-```
-
-Loading it back to our training data
-```{r}
-dataTraining <- trainingSubs
-rm(trainingSubs)
-```
-
-Performing the exact same 3 transformations for dataValidating and testinData.
-```{r}
-clean <- colnames(dataTraining)
-clean1 <- colnames(dataTraining[, -58]) #already with classe column removed
-dataValidating <- dataValidating[clean]
-testingData <- testingData[clean1]
-dim(dataValidating)
-dim(testingData)
-```
-
-In order to ensure proper functioning of Decision Trees and especially RandomForest Algorithm with the Test data set (data set provided), data is coerced into the same type.
-```{r}
-for (i in 1:length(testingData) ) {
-  for(j in 1:length(dataTraining)) {
-    if( length( grep(names(dataTraining[i]), names(testingData)[j]) ) ==1)  {
-      class(testingData[j]) <- class(dataTraining[i])
-    }      
-  }      
-}
-
-testingData <- rbind(dataTraining[2, -58] , testingData)
-testingData <- testingData[-1,]
 ```
 
 ##ML Algorithm 1: Decision Tree
@@ -135,18 +88,29 @@ fancyRpartPlot(modelFitA1)
 predictionsA1 <- predict(modelFitA1, dataValidating, type = "class")
 confusionMatrix(predictionsA1, dataValidating$classe)
 ```
+The Decision Tree algorithm predicts with our validating dataset with an accuracy of 73.68% and Kappa value of 0.6656
 
-##ML Algorithm 1: Random Forests
+##ML Algorithm 2: Random Forests
 ```{r}
 modelFitB1 <- randomForest(classe ~. , data=dataTraining)
 predictionsB1 <- predict(modelFitB1, dataValidating, type = "class")
 confusionMatrix(predictionsB1, dataValidating$classe)
+
+OOS_err_rate = sum(predictionsB1 != dataValidating$classe)/length(dataValidating$classe)
+OOS_err_rate
 ```
+The Confusion Matrix for Random Forests algorithm achieved 99.49% accuracy and an out-of-sample error rate of 0.51%. This model will be used for the final calculations.
 
 ##Prediction on the Testing dataset
 ```{r}
 predictionsB2 <- predict(modelFitB1, testingData, type = "class")
 ```
+
+
+##Conclusion
+In this project, two machine learning algorithms were built using 54 variables (less than one-third of the covariates). Decision Tree predicted with an accuracy of 73.68% and Random Forests predicted with an almost perfect accuracy of 99.49%.
+
+However, this unexpectedly high accuracy obtained by Random Forests is suspicious. Either the 20 participants for whom we have data were extraordinarily obedient for more than 19 thousand observations or the data was somehow doctored for this class, or additional testing needs to be performed on other different participants, or the devices that captured the data are very accurate!
 
 ##Generating answers for Course Project Prediction Quiz
 ```{r}
@@ -159,3 +123,4 @@ pml_write_files = function(x){
 }
 pml_write_files(predictionsB2)
 ```
+(The prediction result pred.char is not displayed intentionally due to Honour Code, because it is the answer of the “project submission” part.)
